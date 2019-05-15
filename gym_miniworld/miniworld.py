@@ -387,22 +387,30 @@ class Room:
         else:
             self.wall_texcs = np.array([]).reshape(0, 2)
 
-    def _render(self):
+    def _render(self, no_floor_texture=None):
         """
         Render the static elements of the room
         """
 
-        glEnable(GL_TEXTURE_2D)
         glColor3f(1, 1, 1)
 
         # Draw the floor
-        self.floor_tex.bind()
+        if (no_floor_texture):
+            glDisable(GL_TEXTURE_2D)
+            glColor3f(0.5, 0.5, 0.5)
+        else:
+            glEnable(GL_TEXTURE_2D)
+            self.floor_tex.bind()
+
         glBegin(GL_POLYGON)
         glNormal3f(0, 1, 0)
         for i in range(self.floor_verts.shape[0]):
             glTexCoord2f(*self.floor_texcs[i, :])
             glVertex3f(*self.floor_verts[i, :])
         glEnd()
+
+        # if (no_floor_texture):
+        #     glEnable(GL_TEXTURE_2D)
 
         # Draw the ceiling
         if not self.no_ceiling:
@@ -519,6 +527,15 @@ class MiniWorldEnv(gym.Env):
             y = window_height - (self.obs_disp_height + 19)
         )
 
+        self.user_text_label = pyglet.text.Label(
+            font_name="Arial",
+            font_size=14,
+            multiline=True,
+            width=400,
+            x=window_width + 5,
+            y=window_height - (self.obs_disp_height + 200)
+        )
+
         # Initialize the state
         self.seed()
         self.reset()
@@ -530,11 +547,14 @@ class MiniWorldEnv(gym.Env):
         self.rand = RandGen(seed)
         return [seed]
 
-    def reset(self):
+    def reset(self, no_floor_texture=False):
         """
         Reset the simulation at the start of a new episode
         This also randomizes many environment parameters (domain randomization)
         """
+
+        self.points = []
+        self.colors = []
 
         # Step count since episode start
         self.step_count = 0
@@ -584,7 +604,9 @@ class MiniWorldEnv(gym.Env):
             self._gen_static_data()
 
         # Pre-compile static parts of the environment into a display list
-        self._render_static()
+        self._render_static(no_floor_texture=False, list_id=1)
+        self._render_static(no_floor_texture=True, list_id=2)
+
 
         # Generate the first camera image
         obs = self.render_obs()
@@ -1008,7 +1030,7 @@ class MiniWorldEnv(gym.Env):
 
         return 1.0 - 0.2 * (self.step_count / self.max_episode_steps)
 
-    def _render_static(self):
+    def _render_static(self, no_floor_texture, list_id):
         """
         Render the static elements of the scene into a display list.
         Called once at the beginning of each episode.
@@ -1016,8 +1038,8 @@ class MiniWorldEnv(gym.Env):
 
         # TODO: manage this automatically
         # glIsList
-        glDeleteLists(1, 1);
-        glNewList(1, GL_COMPILE);
+        glDeleteLists(list_id, 1);
+        glNewList(list_id, GL_COMPILE);
 
         # Light position
         glLightfv(GL_LIGHT0, GL_POSITION, (GLfloat*4)(*self.light_pos + [1]))
@@ -1043,7 +1065,8 @@ class MiniWorldEnv(gym.Env):
 
         # Render the rooms
         for room in self.rooms:
-            room._render()
+            #room._render()
+            room._render(no_floor_texture)
 
         # Render the static entities
         for ent in self.entities:
@@ -1055,7 +1078,8 @@ class MiniWorldEnv(gym.Env):
     def _render_world(
         self,
         frame_buffer,
-        render_agent
+        render_agent,
+        no_floor_texture=False
     ):
         """
         Render the world from a given camera position into a frame buffer,
@@ -1063,7 +1087,10 @@ class MiniWorldEnv(gym.Env):
         """
 
         # Call the display list for the static parts of the environment
-        glCallList(1)
+        if no_floor_texture:
+            glCallList(2)
+        else:
+            glCallList(1)
 
         # TODO: keep the non-static entities in a different list for efficiency?
         # Render the non-static entities
@@ -1148,9 +1175,23 @@ class MiniWorldEnv(gym.Env):
         ]
         glLoadMatrixf((GLfloat * len(m))(*m))
 
+        if len(self.points) > 0:
+            num_points = len(self.points) // 3
+            assert len(self.points) == len(self.colors)
+            assert len(self.points) > 0
+
+            glPointSize(10)
+            pyglet.graphics.draw(num_points, pyglet.gl.GL_POINTS,
+                                 ('v3f', self.points),
+                                 ('c3B', self.colors)
+                                )
+
+
+
         return self._render_world(
             frame_buffer,
-            render_agent=True
+            render_agent=True,
+            no_floor_texture=True,
         )
 
     def render_obs(self, frame_buffer=None):
@@ -1215,6 +1256,21 @@ class MiniWorldEnv(gym.Env):
 
         return frame_buffer.get_depth_map(0.04, 100.0)
 
+    def add_point(self, point, option):
+        if option == 0:
+            color = [255, 255, 0] #yellow
+        elif option == 1:
+            color = [255, 0, 255]
+        else:
+            assert False, "unknown option"
+
+        # Make sure the position is above the floor (y=0)
+        point = [point[0], 1, point[2]]
+
+        self.points += point
+        self.colors += color
+
+
     def render(self, mode='human', close=False):
         """
         Render the environment for human viewing
@@ -1226,8 +1282,8 @@ class MiniWorldEnv(gym.Env):
             return
 
         # Render the human-view image
-        img = self.render_obs(self.vis_fb)
-        #img = self.render_top_view(self.vis_fb)
+        #img = self.render_obs(self.vis_fb)           #change this to get the obs vs top view
+        img = self.render_top_view(self.vis_fb)
         img_width = img.shape[1]
         img_height = img.shape[0]
 
@@ -1310,6 +1366,11 @@ class MiniWorldEnv(gym.Env):
             self.step_count
         )
         self.text_label.draw()
+
+        if hasattr(self, 'usertext'):
+            self.user_text_label.text = "Option: %d" % self.usertext
+            self.user_text_label.draw()
+            self.add_point(self.agent.pos,self.usertext)
 
         # Force execution of queued commands
         glFlush()

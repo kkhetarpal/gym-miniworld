@@ -9,9 +9,10 @@ class OneRoom(MiniWorldEnv):
     placed randomly in one big room.
     """
 
-    def __init__(self, size=10, **kwargs):
+    def __init__(self, size=10,change_goal=None, **kwargs):
         assert size >= 2
         self.size = size
+        self.change_goal = change_goal
 
         super().__init__(
             max_episode_steps=180,
@@ -26,7 +27,10 @@ class OneRoom(MiniWorldEnv):
             max_z=self.size
         )
 
-        self.box = self.place_entity(Box(color='red'))
+        if not self.change_goal:
+            self.box = self.place_entity(Box(color='red'))
+        else:
+            self.box = self.place_entity(Box(color='blue'))
         self.place_agent()
 
     def step(self, action):
