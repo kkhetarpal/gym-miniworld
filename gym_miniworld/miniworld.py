@@ -397,7 +397,7 @@ class Room:
         # Draw the floor
         if (no_floor_texture):
             glDisable(GL_TEXTURE_2D)
-            glColor3f(0.5, 0.5, 0.5)
+            glColor3f(1, 1, 1)
         else:
             glEnable(GL_TEXTURE_2D)
             self.floor_tex.bind()
@@ -1258,7 +1258,7 @@ class MiniWorldEnv(gym.Env):
 
     def add_point(self, point, option):
         if option == 0:
-            color = [255, 255, 0] #yellow
+            color = [0, 0, 255] #blue
         elif option == 1:
             color = [255, 0, 255]
         else:
